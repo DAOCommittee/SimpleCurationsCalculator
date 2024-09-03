@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CurationsCalculatorWeb</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+  <div class="container mt-4">
+    <h1 class="mb-4">Curations Data</h1>
+
+    <!-- JSON Input -->
+    <div class="mb-3">
+      <label for="jsonInput" class="form-label">Paste JSON Data Here (<a href="https://api.thegraph.com/subgraphs/name/decentraland/collections-matic-mainnet/graphql?query=query+MyQuery+%7B%0A++curations%28first%3A+100+orderBy%3A+timestamp+orderDirection%3A+desc%29+%7B%0A++++txHash%0A++++curator+%7B%0A++++++id%0A++++%7D%0A++++isApproved%0A++++timestamp%0A++%7D%0A%7D" target="_blank">click to generate</a>):</label>
+      <textarea class="form-control" id="jsonInput" rows="10"></textarea>
+    </div>
+
+    <!-- Date Filter Inputs -->
+    <div class="row mb-3">
+      <div class="col">
+        <label for="startDate" class="form-label">Start Date (UTC)</label>
+        <input type="datetime-local" class="form-control" id="startDate">
+      </div>
+      <div class="col">
+        <label for="endDate" class="form-label">End Date (UTC)</label>
+        <input type="datetime-local" class="form-control" id="endDate">
+      </div>
+      <div class="col">
+        <label for="paymentNumber" class="form-label">Payment Number $</label>
+        <input type="number" class="form-control" id="paymentNumber" placeholder="Enter payment per curation">
+      </div>
+      <div class="col d-flex align-items-end">
+        <button class="btn btn-primary" onclick="processJSON()">Process</button>
+      </div>
+    </div>
+
+    <!-- Curations Table -->
+    <table class="table table-bordered" id="curationsTable">
+      <thead>
+        <tr>
+          <th>Curator Name</th>
+          <th>Tx Hash</th>
+          <th>Is Approved</th>
+          <th>Timestamp (UTC)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Dynamic content will be inserted here -->
+      </tbody>
+    </table>
+
+    <!-- Earnings Table -->
+    <h2>Earnings by User</h2>
+    <table class="table table-bordered" id="earningsTable">
+      <thead>
+        <tr>
+          <th>Curator Name</th>
+          <th>Total Earnings ($)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Dynamic content will be inserted here -->
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    const userWallets = {
+      "0x5d7846007c1dd6dca25d16ce2f71ec13bcdcf6f0": { "name": "Lau" },
+      "0x716954738e57686a08902d9dd586e813490fee23": { "name": "HirotoKai" },
+      "0x7a3891acf4f3b810992c4c6388f2e37357d7d3ab": { "name": "JP" },
+      "0x82d54417fc69681dc74a6c0c68c6dbad5a2857b9": { "name": "Malloy" },
+      "0x8938d1f65abe7750b0777206ee26c974a6721194": { "name": "Shibu" },
+      "0x91e222ed7598efbcfe7190481f2fd14897e168c8": { "name": "Chestnutbruze" },
+      "0x399a44f5821b1f859bc236e14367c4f7c36933fb": { "name": "Shibu Old" },
+      "0x967fb0c36e4f5288f30fb05f8b2a4d7b77eaca4b": { "name": "Kat" },
+      "0x5e382071464a6f9ea29708a045983dc265b0d86d": { "name": "Sango" },
+      "0xc8ad6322821b51da766a4b2a82b39fb72b53d276": { "name": "Grimey" },
+      "0xa8c7d5818a255a1856b31177e5c96e1d61c83991": { "name": "AndreusAs" },
+      "0x336685bb3a96e13b77e909d7c52e8afcff1e859e": { "name": "Mitch" },
+      "0x41eb5f82af60873b3c14fedb898a1712f5c35366": { "name": "Kristian" },
+      "0x470c33abd57166940095d59bd8dd573cbae556c3": { "name": "James Guard" },
+      "0x1dec5f50cb1467f505bb3ddfd408805114406b10": { "name": "Fabeeo" },
+      "0x805797df0c0d7d70e14230b72e30171d730da55e": { "name": "Yannakis Old" },
+      "0x5ce9fb617333b8c5a8f7787710f7c07002cb3516": { "name": "Yannakis" },
+      "0x60afadfce78b09a7ee7b06321170bce9cc91a11a": { "name": "theankou" } // Añadido nuevo usuario con formato de minúsculas
+    };
+
+    $(document).ready(function() {
+      const params = new URLSearchParams(window.location.search);
+      const jsonParam = params.get('json');
+      const startDateParam = params.get('startDate');
+      const endDateParam = params.get('endDate');
+      const paymentNumberParam = params.get('paymentNumber');
+
+      if (jsonParam && startDateParam && endDateParam && paymentNumberParam) {
+        $('#jsonInput').val(decodeURIComponent(jsonParam));
+        $('#startDate').val(startDateParam);
+        $('#endDate').val(endDateParam);
+        $('#paymentNumber').val(paymentNumberParam);
+        processJSON();  // Procesa automáticamente si hay parámetros en la URL
+      }
+    });
+
+    function processJSON() {
+      // Get JSON data from input
+      const jsonData = $('#jsonInput').val();
+      const parsedData = JSON.parse(jsonData);
+      const curations = parsedData.data.curations;
+
+      // Get filter values
+      const startDate = new Date($('#startDate').val()).getTime() / 1000;
+      const endDate = new Date($('#endDate').val()).getTime() / 1000;
+      const paymentNumber = parseFloat($('#paymentNumber').val());
+
+      // Clear previous results
+      $('#curationsTable tbody').empty();
+      $('#earningsTable tbody').empty();
+
+      // Process curations and calculate earnings
+      let earnings = {};
+
+      curations.forEach(curation => {
+        const curatorId = curation.curator.id.toLowerCase(); // Convertir la wallet a minúsculas
+        const timestamp = parseInt(curation.timestamp);
+        
+        if (timestamp >= startDate && timestamp <= endDate) {
+          const curatorName = userWallets[curatorId]?.name || curatorId; // Muestra la wallet si el usuario no es conocido
+          const isApproved = curation.isApproved ? 'Yes' : 'No';
+          const txHash = curation.txHash;
+
+          // Append row to curations table
+          $('#curationsTable tbody').append(`
+            <tr>
+              <td>${curatorName}</td>
+              <td>${txHash}</td>
+              <td>${isApproved}</td>
+              <td>${new Date(timestamp * 1000).toUTCString()}</td>
+            </tr>
+          `);
+
+          // Calculate earnings
+          if (!earnings[curatorId]) {
+            earnings[curatorId] = { name: curatorName, total: 0 };
+          }
+          earnings[curatorId].total += paymentNumber;
+        }
+      });
+
+      // Append rows to earnings table
+      for (const [curatorId, data] of Object.entries(earnings)) {
+        $('#earningsTable tbody').append(`
+          <tr>
+            <td>${data.name} <button class="btn btn-sm btn-secondary" onclick="copyToClipboard('${curatorId}')">Copy Wallet</button></td>
+            <td>${data.total.toFixed(2)}</td>
+          </tr>
+        `);
+      }
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        alert('Wallet copied to clipboard!');
+      });
+    }
+  </script>
+</body>
+</html>
